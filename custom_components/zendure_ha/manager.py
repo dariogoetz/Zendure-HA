@@ -1,9 +1,9 @@
 """Coordinator for Zendure integration."""
 
+from __future__ import annotations
 from typing import Literal
 from dataclasses import field
 from dataclasses import dataclass
-from __future__ import annotations
 
 import asyncio
 import hashlib
