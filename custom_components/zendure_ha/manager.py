@@ -144,6 +144,7 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         self.update_count = 0
 
         self.virtual_p1: VirtualP1 = VirtualP1()
+        self.max_discharge: int = 250
 
         self.charge: list[ZendureDevice] = []
         self.charge_limit = 0
@@ -573,6 +574,8 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         # push the setpoint below "p1 - real charge credits": with no device charging
         # and p1 >= 0, the result stays >= 0 — the #1151 guarantee holds structurally.
         setpoint -= self.discharge_bypass
+
+        setpoint = min(setpoint, self.max_discharge)
 
         # Update power distribution.
         _LOGGER.info("P1 ======> p1:%s isFast:%s, setpoint:%sW stored:%sW", p1, isFast, setpoint, self.produced)
