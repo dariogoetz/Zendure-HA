@@ -126,7 +126,9 @@ class ZendureDevice(EntityDevice):
 
         self.mqtt: mqtt_client.Client | None = None
         self.zendure: mqtt_client.Client | None = None
-        self.ipAddress = definition.get("ip", "") if definition.get("ip", "") != "" else f"zendure-{definition['productModel'].replace(' ', '')}-{self.snNumber}.local"
+        # self.ipAddress = definition.get("ip", "") if definition.get("ip", "") != "" else f"zendure-{definition['productModel'].replace(' ', '')}-{self.snNumber}.local"
+        # hack for me, because the "zendure-...-....local" does not resolve for me
+        self.ipAddress = definition.get("ip", "") or "192.168.1.163"
 
         self.topic_read = f"iot/{self.prodkey}/{self.deviceId}/properties/read"
         self.topic_write = f"iot/{self.prodkey}/{self.deviceId}/properties/write"
