@@ -74,6 +74,9 @@ class VirtualP1:
             filtered = int(sum(vals) / len(vals))
         elif self.filter_type == "close_to_zero":
             filtered = sorted(vals, key=lambda v: abs(v))[0]
+            if self.hysteresis is not None and abs(filtered) <= self.hysteresis:
+                # regularize to zero, when within hysteresis of 0
+                filtered = 0
         else:
             msg = f"Invalid filter type: {self.filter_type}"
             raise ValueError(msg)
