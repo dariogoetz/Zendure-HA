@@ -1,5 +1,8 @@
 """Coordinator for Zendure integration."""
 
+from typing import Literal
+from dataclasses import field
+from dataclasses import dataclass
 from __future__ import annotations
 
 import asyncio
@@ -48,6 +51,74 @@ _LOGGER = logging.getLogger(__name__)
 type ZendureConfigEntry = ConfigEntry[ZendureManager]
 
 
+@dataclass
+class TimedValue:
+    instant: datetime
+    value: int
+
+
+@dataclass
+class VirtualP1:
+    hysteresis: int | None = 10
+    filter_timespan_s: float | None = 15
+    filter_type: Literal["min", "avg", "close_to_zero"] = "close_to_zero"
+    force_update_every_s: int = 60
+
+    _active_value: TimedValue | None = None
+    _history: deque[TimedValue] = field(default_factory=lambda: deque([], maxlen=8))
+
+    def _apply_filter(self, vals: list[int]) -> int:
+        if self.filter_type == "min":
+            filtered = min(vals)
+        elif self.filter_type == "avg":
+            filtered = int(sum(vals) / len(vals))
+        elif self.filter_type == "close_to_zero":
+            filtered = sorted(vals, key=lambda v: abs(v))[0]
+        else:
+            msg = f"Invalid filter type: {self.filter_type}"
+            raise ValueError(msg)
+        return filtered
+
+    def update(self, value: int) -> int | None:
+        now = datetime.now()
+
+        # compute minimum filter (if applicable)
+        if self.filter_timespan_s is None:
+            filtered_value = value
+        else:
+            # filter history for timespan
+            self._history = deque(
+                (
+                    hist_val
+                    for hist_val in self._history
+                    if (now - hist_val.instant).total_seconds() < self.filter_timespan_s
+                ),
+                maxlen=8,
+            )
+            self._history.append(TimedValue(now, value))
+            filtered_value = self._apply_filter([v.value for v in self._history])
+
+        if (
+            self._active_value is None
+            or (now - self._active_value.instant).total_seconds()
+            > self.force_update_every_s
+        ):
+            # initialize/force update active value
+            self._active_value = TimedValue(now, filtered_value)
+            return filtered_value
+
+        if self.hysteresis is not None and (
+            abs(self._active_value.value - filtered_value) <= self.hysteresis
+        ):
+            # within hysteresis
+            # pretend value did not change
+            return None
+
+        # update active_value
+        self._active_value = TimedValue(now, filtered_value)
+        return filtered_value
+
+
 class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
     """Class to regular update devices."""
 
@@ -68,6 +139,8 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         self.p1_history: deque[int] = deque([25, -25], maxlen=8)
         self.p1_factor = 1
         self.update_count = 0
+
+        self.virtual_p1: VirtualP1 = VirtualP1()
 
         self.charge: list[ZendureDevice] = []
         self.charge_limit = 0
@@ -378,6 +451,11 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         try:  # convert the state to a float
             p1 = int(self.p1_factor * float(new_state.state))
         except ValueError:
+            return
+
+        # apply my filter to p1 (minimum in timespan + hysteresis)
+        p1 = self.virtual_p1.update(p1)
+        if p1 is None:
             return
 
         # Get time & update simulation
